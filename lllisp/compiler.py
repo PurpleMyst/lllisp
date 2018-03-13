@@ -8,7 +8,8 @@ from .prelude import prelude
 
 
 LLVM_TYPES = {
-    "int32": llvmlite.ir.IntType(32)
+    "int32": llvmlite.ir.IntType(32),
+    "int64": llvmlite.ir.IntType(64),
 }
 
 

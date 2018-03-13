@@ -109,12 +109,13 @@ class Compiler:
         if isinstance(value, SExpr):
             name, *args = value
 
+            # TODO: Should we just move *everything* into the prelude?
             if name.value == "defun":
                 function = self._create_function(*args)
                 self._set_variable(args[1], function)
             elif name.value == "setq":
                 self._set_variable(*args)
-            elif name.value == "begin":
+            elif name.value == "progn":
                 return self._chain(args)
             elif name.value == "constant":
                 return self._make_constant(*args)

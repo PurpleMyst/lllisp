@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 from .objects import Symbol, String, Number, SExpr
 
+ESCAPES = {
+    'n': '\n',
+}
+
 
 def parse(text):
     text = iter(text)
@@ -49,8 +53,11 @@ def parse(text):
 
                 if char2 == '\\':
                     escaped = True
+                    continue
                 elif char2 == '"' and not escaped:
                     break
+                elif escaped:
+                    buf.append(ESCAPES.get(char2, char2))
                 else:
                     buf.append(char2)
 

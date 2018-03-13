@@ -25,6 +25,14 @@ class Compiler:
         else:
             self.builder.ret(main_type.return_type(0))
 
+    @staticmethod
+    def _random_name(size=10):
+        import random
+        import string
+
+        return "".join(random.choice(string.ascii_letters)
+                       for _ in range(size))
+
     def _chain(self, body):
         result = None
 
@@ -114,18 +122,31 @@ class Compiler:
                 func = self.variables[name.value]
 
                 if isinstance(func, BuiltinFunction):
-                    # TODO: Are `BuiltinFunction.returntype` and
-                    # `BuiltinFunction.args` needed?
+                    # TODO: Verify returntype/args.
                     result = func.func(self, *args)
                     return result
-                elif isinstance(func, llvmlite.ir.Function):
-                    raise NotImplementedError
                 else:
-                    raise TypeError(type(value))
+                    # we're assuming this is a function
+                    # TODO: don't assume
+                    func = self.builder.load(func)
+                    func_args = [self._compile_value(arg) for arg in args]
+                    return self.builder.call(func, func_args)
             else:
                 raise NameError(f"Unknown function {name.value!r}")
-        elif isinstance(value, (String, Number)):
-            return value
+        elif isinstance(value, String):
+            char = llvmlite.ir.IntType(8)
+            s = bytearray(value.value.encode("utf8", "strict"))
+            ty = llvmlite.ir.ArrayType(char,
+                                       len(s))
+
+            global_var = llvmlite.ir.GlobalVariable(self.module, ty,
+                                                    self._random_name())
+            global_var.initializer = ty(s)
+            return self.builder.bitcast(global_var, char.as_pointer())
+        elif isinstance(value, Number):
+            raise RuntimeError("Please specify a type for your number. "
+                               "For example, if you wanted an int, you could"
+                               f"write `(constant int {value.value})`")
         elif isinstance(value, Symbol):
             return self._load_variable(value)
         elif isinstance(value, llvmlite.ir.values.Function):

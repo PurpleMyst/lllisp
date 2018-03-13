@@ -9,6 +9,7 @@ __all__ = ["Symbol", "Number", "String", "SExpr",
 
 LLVM_TYPES = {
     "int": llvmlite.ir.IntType(32),
+    "string": llvmlite.ir.IntType(8).as_pointer(),
 }
 
 Symbol = collections.namedtuple("Symbol", "value")

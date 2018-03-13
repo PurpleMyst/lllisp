@@ -15,7 +15,15 @@ pip install -r --user requirements.txt`
 
 ## Usage
 
-Currently any usage is to be added.
+Create a file that contains some lllisp code, and name it whatever you want.
+For the sake of this example, we'll assume your file is named `example.cl`.
+
+To compile your code to LLVM IR, you just simply write at the command prompt:
+```shell
+python3 -m lllisp example.cl
+```
+
+Actually running/compiling will be added later. :+1:
 
 ## Reasoning
 

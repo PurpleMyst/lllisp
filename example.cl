@@ -1,4 +1,5 @@
-(function int32 main ()
-  (begin
-    (let x (constant int32 1))
-    x))
+(setq x (constant int 1))
+
+(defun int twice ((int x))
+  (+ x x)
+)

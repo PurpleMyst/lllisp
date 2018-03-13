@@ -3,99 +3,133 @@ import collections
 
 import llvmlite.ir
 
-from .parser import Symbol, Number, String, SExpr
+from .objects import Symbol, Number, String, SExpr, LLVM_TYPES, BuiltinFunction
 from .prelude import prelude
 
 
-LLVM_TYPES = {
-    "int32": llvmlite.ir.IntType(32),
-    "int64": llvmlite.ir.IntType(64),
-}
+class Compiler:
+    def __init__(self, s_exprs):
+        self.module = llvmlite.ir.Module(name="lllisp")
 
+        main_type = llvmlite.ir.FunctionType(llvmlite.ir.IntType(32), ())
+        main_func = llvmlite.ir.Function(self.module, main_type, "main")
+        entry = main_func.append_basic_block(name="entry")
+        self.builder = llvmlite.ir.IRBuilder(entry)
 
-def compile_to_ir(toplevel_sexpr):
-    module = llvmlite.ir.Module(name="lllisp")
-    builder = llvmlite.ir.IRBuilder()
+        self.functions = collections.ChainMap({"main": main_func})
+        self.variables = collections.ChainMap(prelude).new_child()
 
-    functions = collections.ChainMap()
-    variables = collections.ChainMap(prelude)
+        rv = self._chain(s_exprs)
+        if rv is not None:
+            self.builder.ret(rv)
+        else:
+            self.builder.ret(main_type.return_type(0))
 
-    depth = 0
-
-    def chain(body):
+    def _chain(self, body):
         result = None
 
-        if not isinstance(body, (SExpr, list)):
+        if not hasattr(body, "__iter__"):
             body = SExpr.singleton(body)
 
         for value in body:
-            result = compile_to_ir_impl(value)
+            result = self._compile_value(value)
 
         return result
 
-    def compile_function(returntype, name, args, body):
-        nonlocal depth
-
-        returntype = LLVM_TYPES[returntype.value]
-
-        # TODO: Add args
-        assert not args
-        llvm_type = llvmlite.ir.FunctionType(returntype, ())
-
-        function = llvmlite.ir.Function(module, llvm_type, name.value)
-        entry = function.append_basic_block(name="entry")
-        builder.position_at_start(entry)
-
-        functions[name.value] = function
-
-        rv = compile_to_ir_impl(body)
-        if rv is not None:
-            builder.ret(rv)
-
-    def define_variable(name, value):
-        value = compile_to_ir_impl(value)
-        llvm_type = value.type
-        variable = builder.alloca(llvm_type)
-        builder.store(value, variable)
-        variables[name.value] = variable
-        return variable
-
-    def make_constant(llvm_type, value):
+    @staticmethod
+    def _make_constant(llvm_type, value):
+        # Make a constant from a lllisp value.
         llvm_type = LLVM_TYPES[llvm_type.value]
         return llvm_type(value.value)
 
-    def compile_to_ir_impl(value):
-        nonlocal depth
+    def _set_variable(self, name, value):
+        # Assign a variable `name` to a value `value`. If a variable `name`
+        # does not exist, create it in the current scope.
+        if isinstance(name, Symbol):
+            name = name.value
 
+        if name not in self.variables:
+            value = self._compile_value(value)
+            llvm_type = value.type
+            variable = self.builder.alloca(llvm_type)
+            self.variables[name] = variable
+
+        variable = self.variables[name]
+        self.builder.store(value, variable)
+        return variable
+
+    def _load_variable(self, name):
+        if isinstance(name, Symbol):
+            name = name.value
+
+        location = self.variables[name]
+
+        if isinstance(location, llvmlite.ir.types.PointerType):
+            return self.builder.load(location)
+        else:
+            # i.e. function arguments
+            return location
+
+    def _create_function(self, returntype, name, args, *body):
+        # Create a `returntype name(args) { body }` function in the top-level
+        # and return its `llvmlite.ir.Function` object.
+
+        # TODO: Support closures. I'm not really sure how.
+        self.variables = self.variables.new_child()
+
+        returntype = LLVM_TYPES[returntype.value]
+
+        llvm_argtypes = [LLVM_TYPES[ty.value] for (ty, _) in args]
+        func_type = llvmlite.ir.FunctionType(returntype, llvm_argtypes)
+        function = llvmlite.ir.Function(self.module, func_type, name.value)
+        entry = function.append_basic_block(name="entry")
+
+        for arg, (_, name) in zip(function.args, args):
+            self.variables[name.value] = arg
+
+        with self.builder.goto_block(entry):
+            self.functions[name.value] = function
+
+            rv = self._chain(body)
+            if rv is not None:
+                self.builder.ret(rv)
+
+        self.variables = self.variables.parents
+        return function
+
+    def _compile_value(self, value):
         if isinstance(value, SExpr):
             name, *args = value
 
-            if name.value == "function":
-                if depth == 0:
-                    depth += 1
-                    compile_function(*args)
-                    depth -= 1
-                else:
-                    raise RuntimeError("Can not define function "
-                                       "not at the top level.")
-            elif name.value == "let":
-                define_variable(*args)
+            if name.value == "defun":
+                function = self._create_function(*args)
+                self._set_variable(args[1], function)
+            elif name.value == "setq":
+                self._set_variable(*args)
             elif name.value == "begin":
-                return chain(args)
+                return self._chain(args)
             elif name.value == "constant":
-                return make_constant(*args)
+                return self._make_constant(*args)
+            elif name.value in self.variables:
+                func = self.variables[name.value]
+
+                if isinstance(func, BuiltinFunction):
+                    # TODO: Are `BuiltinFunction.returntype` and
+                    # `BuiltinFunction.args` needed?
+                    result = func.func(self, *args)
+                    return result
+                elif isinstance(func, llvmlite.ir.Function):
+                    raise NotImplementedError
+                else:
+                    raise TypeError(type(value))
             else:
-                # TODO: Look stuff up in prelude.
                 raise NameError(f"Unknown function {name.value!r}")
         elif isinstance(value, (String, Number)):
             return value
         elif isinstance(value, Symbol):
-            return builder.load(variables[value.value])
+            return self._load_variable(value)
+        elif isinstance(value, llvmlite.ir.values.Function):
+            return value
         else:
             # TODO: Stuff.
             raise TypeError(type(value))
-
-    for sexpr in toplevel_sexpr:
-        compile_to_ir_impl(sexpr)
-
-    return module

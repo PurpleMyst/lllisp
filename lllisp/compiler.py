@@ -3,7 +3,8 @@ import collections
 
 import llvmlite.ir
 
-from .objects import Symbol, Number, String, SExpr, LLVM_TYPES, BuiltinFunction
+from .objects import (Symbol, Number, String, SExpr, Boolean,
+                      LLVM_TYPES, BuiltinFunction)
 from .prelude import prelude
 
 
@@ -19,11 +20,8 @@ class Compiler:
         self.functions = collections.ChainMap({"main": main_func})
         self.variables = collections.ChainMap(prelude).new_child()
 
-        rv = self._chain(s_exprs)
-        if rv is not None:
-            self.builder.ret(rv)
-        else:
-            self.builder.ret(main_type.return_type(0))
+        self._chain(s_exprs)
+        self.builder.ret(main_type.return_type(0))
 
     @staticmethod
     def _random_name(size=10):
@@ -101,9 +99,22 @@ class Compiler:
             rv = self._chain(body)
             if rv is not None:
                 self.builder.ret(rv)
+            else:
+                self.builder.ret_void()
 
         self.variables = self.variables.parents
         return function
+
+    def _if(self, cond, truthy, falsey=None):
+        cond = self._compile_value(cond)
+
+        with self.builder.if_else(cond) as (then, otherwise):
+            with then:
+                self._compile_value(truthy)
+
+            with otherwise:
+                if falsey is not None:
+                    self._compile_value(falsey)
 
     def _compile_value(self, value):
         if isinstance(value, SExpr):
@@ -117,8 +128,13 @@ class Compiler:
                 self._set_variable(*args)
             elif name.value == "progn":
                 return self._chain(args)
+            elif name.value == "if":
+                return self._if(*args)
             elif name.value == "constant":
                 return self._make_constant(*args)
+            elif name.value == "recur":
+                func_args = [self._compile_value(arg) for arg in args]
+                return self.builder.call(self.builder.function, func_args)
             elif name.value in self.variables:
                 func = self.variables[name.value]
 

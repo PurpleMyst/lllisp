@@ -1,7 +1,9 @@
 (setq x (constant int 1))
 
-(defun int twice ((int x))
-  (+ x x)
-)
+(defun void countdown ((int x))
+  (if (not (= x (constant int 0)))
+    (progn
+      (printf "%d\n" x)
+      (recur (+ x (constant int -1))))))
 
-(printf "%d\n" (twice (constant int 3)))
+(countdown (constant int 3))

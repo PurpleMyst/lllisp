@@ -14,6 +14,9 @@ def define_builtin(name, returntype, args):
     for i, arg in enumerate(args):
         if arg is Ellipsis:
             print("var_arg")
+        elif arg == "any":
+            # TODO: halp, not sure what to do here.
+            args.append(None)
         else:
             args.append(LLVM_TYPES[arg])
 
@@ -40,7 +43,23 @@ def _printf(compiler, fmt, *args):
     printf_args.extend(compiler._compile_value(arg) for arg in args)
 
     # TODO: Move these somewhere else.
-    printf_type = llvmlite.ir.FunctionType(llvmlite.ir.IntType(32), (llvmlite.ir.IntType(8).as_pointer(),), var_arg=True)
+    printf_type = llvmlite.ir.FunctionType(llvmlite.ir.IntType(32),
+                                           (llvmlite.ir.IntType(8).as_pointer(),), 
+                                           var_arg=True)
     printf = llvmlite.ir.Function(compiler.module, printf_type, name="printf")
 
     compiler.builder.call(printf, printf_args)
+
+@define_builtin("=", "bool", ("any", "any"))
+def _eq(compiler, lhs, rhs):
+    lhs = compiler._compile_value(lhs)
+    rhs = compiler._compile_value(rhs)
+
+    # TODO: Do something depending on lhs/rhs type.
+    return compiler.builder.icmp_signed("==", lhs, rhs)
+
+
+@define_builtin("not", "any", ("any",))
+def _not(compiler, value):
+    value = compiler._compile_value(value)
+    return compiler.builder.not_(value)

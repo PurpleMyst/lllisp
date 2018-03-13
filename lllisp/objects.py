@@ -5,16 +5,21 @@ import llvmlite.ir
 import collections
 
 __all__ = ["Symbol", "Number", "String", "SExpr",
+           "Boolean",
            "BuiltinFunction", "LLVM_TYPES"]
 
 LLVM_TYPES = {
     "int": llvmlite.ir.IntType(32),
+    "bool": llvmlite.ir.IntType(1),
     "string": llvmlite.ir.IntType(8).as_pointer(),
+    "void": llvmlite.ir.VoidType(),
 }
 
 Symbol = collections.namedtuple("Symbol", "value")
 Number = collections.namedtuple("Number", "value")
 String = collections.namedtuple("String", "value")
+
+Boolean = collections.namedtuple("Boolean", "value")
 
 BuiltinFunction = collections.namedtuple("BuiltinFunction",
                                          "returntype func args")
